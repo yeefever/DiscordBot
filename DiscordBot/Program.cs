@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Discord;
 using Discord.Commands;
+using System.Text.Json;
 using Discord.WebSocket;
 using Microsoft.Extensions.DependencyInjection;
 using System;
@@ -14,10 +15,27 @@ using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Reactive.Joins;
 using System.Text.RegularExpressions;
+using Discord.Interactions;
+using Discord.Net;
+using Newtonsoft.Json;
+using System.Diagnostics;
+using OfficeOpenXml;
+using System.Numerics;
+using System.Net.Http;
+using System.Threading.Channels;
+using System.Drawing.Printing;
+using Microsoft.Extensions.Primitives;
+using Discord.Rest;
+using System.Text.Json;
+using System.Diagnostics.Metrics;
+using DSharpPlus;
+using DSharpPlus.CommandsNext;
+using Newtonsoft.Json.Serialization;
+using OfficeOpenXml.FormulaParsing.Excel.Functions.DateTime;
 
-namespace TutorialBot
+namespace DiscordBot
 {
-    class Program
+    class Program : InteractionModuleBase<SocketInteractionContext>
     {
         //variables
         static void Main(string[] args) => new Program().RunBotAsync().GetAwaiter().GetResult();
@@ -26,17 +44,60 @@ namespace TutorialBot
         public CommandService _commands;
         private IServiceProvider _services;
 
-        private SocketGuild guild;
+        private IUser user;
+        private List<string> emojis = new List<string>();
+        private List<IEmote> emotes = new List<IEmote>();
+        private List<ULongPair> messages = new List<ULongPair>();
 
-        //log channel info
+        private SocketGuild guild;
+             
         private ulong LogChannelID;
         private SocketTextChannel LogChannel;
+        private Dictionary<ulong, ULongPair> pmap;
+        private List<ulong> users;
+        private string filePath;
+
+        private Boolean[] temp_table = new bool[7];
+
+        public Program()
+        {
+            _client = new DiscordSocketClient();
+            _commands = new CommandService();
+
+            _client.Log += _client_Log;
+            _client.ReactionAdded += OnReactionAdded;
+            _client.MessageReceived += OnMessageReceived;
+
+            emojis.Add("\U0001F1E6");
+            emojis.Add("\U0001F1E7");
+            emojis.Add("\U0001F1E8");
+            emojis.Add("\U0001F1E9");
+            emojis.Add("\U0001F1EA");
+            emojis.Add("\U0001F1EB");
+            emojis.Add("\U0001F1EC");
+
+            foreach (string s in emojis)
+            {
+                IEmote emote = new Emoji(s);
+                emotes.Add(emote);
+            }
+
+            for (var i = 0; i < 7; i++)
+            {
+                temp_table[i] = false;
+            }
+
+            filePath = "C:\\Users\\kliu3\\source\\repos\\DiscordBot\\DiscordBot\\message_ids.txt";
+            user = null;
+            users = new List<ulong>();
+            pmap = new Dictionary<ulong, ULongPair>();
+
+        }
 
         //run bot connection
         public async Task RunBotAsync()
         {
-            _client = new DiscordSocketClient();
-            _commands = new CommandService();
+
             var config = new DiscordSocketConfig
             {
                 GatewayIntents = GatewayIntents.All | GatewayIntents.MessageContent
@@ -47,13 +108,12 @@ namespace TutorialBot
                     .AddSingleton(_commands)
                     .BuildServiceProvider();
 
-            string token = "MTEzNzgxNTcxNjU1MzMxMDIxOA.GiEMYT.NfkWUGGZit-PfEMpJLqeO_3BkBMoPz5ClYPF3k";
 
-            _client.Log += _client_Log;
+            string token = "MTEzNzgxNTcxNjU1MzMxMDIxOA.GiEMYT.NfkWUGGZit-PfEMpJLqeO_3BkBMoPz5ClYPF3k";
 
             await RegisterCommandsAsync();
 
-            await _client.LoginAsync(TokenType.Bot, token);
+            await _client.LoginAsync(Discord.TokenType.Bot, token);
 
             await _client.StartAsync();
 
@@ -71,111 +131,395 @@ namespace TutorialBot
 
         //Register Commands Async
         public async Task RegisterCommandsAsync()
-        {
+        { 
             _client.MessageReceived += HandleCommandAsync;
             await _commands.AddModulesAsync(Assembly.GetEntryAssembly(), _services);
         }
 
-        // Read Input and get Output ( RECEIVE AND DO SOMETHING )
         public async Task HandleCommandAsync(SocketMessage message)
         {
-            // Check if the message is from a user and not a system message
             if (message.Author.IsBot || message is not IUserMessage userMessage)
                 return;
 
-            // Get the ITextChannel from which the message was sent
             var textChannel = message.Channel as ITextChannel;
 
-            // Fetch the message again using the ITextChannel and message's ID
-            // This ensures we can access the content correctly
             var fetchedMessage = await textChannel.GetMessageAsync(message.Id) as IUserMessage;
 
-            // Check if the fetchedMessage is null (in case the message is not found)
             if (fetchedMessage == null)
                 return;
 
-            // Get the content of the message as a string
             string messageContent = fetchedMessage.Content;
 
-            // Now you can use the message content as needed
-            // For example, you can print it or process it further
             Console.WriteLine("Received message: " + messageContent);
 
-            if(messageContent.StartsWith("!help"))
+            if (messageContent.StartsWith("!invite"))
             {
-                await userMessage.Channel.SendMessageAsync("Bruh.");
-            }
-
-            if(messageContent == "!event")
-            {
-
-            }
-
-            if (messageContent.StartsWith("!dm"))
-            {
-                // Check if the user sending the command has permission to use it.
+                // Check permission
                 if (!(userMessage.Author is SocketGuildUser guildUser) || !guildUser.GuildPermissions.Administrator)
                 {
                     await userMessage.Channel.SendMessageAsync("You don't have permission to use this command.");
                     return;
                 }
 
-                // Split the message content into parts: !dm @username YourMessageHere
                 var parts = messageContent.Split(" ");
                 string userId;
-                if (parts.Length >= 3)
+                if (parts.Length >= 2)
                 {
                     Regex regex = new Regex(@"<@(\d+)>");
-                    Match match = regex.Match(parts[1]);
-                    string contents = string.Join(" ", parts, 2, parts.Length - 2);
+                    for (var i = 1; i < parts.Length; i++)
+                    {
 
-                    // Try to find the user based on the provided username or ID.
+                        Match match = regex.Match(parts[i]);
 
-                    if (match.Success)
-                    {
-                        userId = match.Groups[1].Value;
-                        Console.WriteLine($"Extracted content: {userId}");
-                    }
-                    else
-                    {
-                        await message.Channel.SendMessageAsync("Invalid user ID format.");
-                        return;
-                    }
+                        // find if possible : (
+                        if (match.Success)
+                        {
+                            userId = match.Groups[1].Value;
+                        }
+                        else
+                        {
+                            userId = parts[i];
+                        }
 
-                    ulong userIdAsUlong;
-                    Console.WriteLine(parts[1].Substring(1));
-                    if (ulong.TryParse(userId, out userIdAsUlong))
-                    {
-                    }
-                    else
-                    {
-                        await message.Channel.SendMessageAsync("Invalid user ID format.");
-                    }
+                        ulong ulongValue = 0;
+                        try
+                        {
+                            ulongValue = ulong.Parse(userId);
+                        }
+                        catch (FormatException)
+                        {
+                            Console.WriteLine("Invalid input format. Cannot convert to ulong.");
+                        }
+                        catch (OverflowException)
+                        {
+                            Console.WriteLine("Value is outside the range of ulong.");
+                        }
 
-                    var user = _client.GetUser(userIdAsUlong);
-                    if (user == null)
-                    {
-                        await userMessage.Channel.SendMessageAsync("User not found.");
-                        return;
-                    }
+                        await GetUserById(ulongValue);
+                        await userMessage.Channel.SendMessageAsync($"User Id: {user.Id}.");
+                        await userMessage.Channel.SendMessageAsync($"User Username: {user.Username}");
+                        await userMessage.Channel.SendMessageAsync($"User Discriminator: {user.Discriminator}");
+                        if (user == null || ulongValue == 0)
+                        {
+                            await userMessage.Channel.SendMessageAsync("User not found.");
+                            return;
+                        }
 
-                    // Send the direct message to the selected user.
-                    try
-                    {
-                        await user.SendMessageAsync(contents);
-                        await userMessage.Channel.SendMessageAsync($"Message sent to {user.Username}#{user.Discriminator}: {messageContent}");
+                        try
+                        {
+                            await userMessage.Channel.SendMessageAsync($"Sending DM invitation to : {user.Username}.");
+                            await SendScheduleMessage(user);
+                        }
+                        catch (Exception ex)
+                        {
+                            await userMessage.Channel.SendMessageAsync($"Failed to send the message to {user.Username}#{user.Discriminator}: {ex.Message}");
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        await userMessage.Channel.SendMessageAsync($"Failed to send the message to {user.Username}#{user.Discriminator}: {ex.Message}");
-                    }
-                }
-                else
-                {
-                    await userMessage.Channel.SendMessageAsync("Invalid command format. Usage: !dm @username YourMessageHere");
                 }
             }
 
-        } 
+            if(messageContent == "!reactions")
+            {
+                //await CheckReactionsOfMessage(2323, 23232);
+                await CheckReactionsOfMessage(23);
+            }
+
+            if(messageContent == "!table")
+            {
+                setupRead();
+
+                List<string> usernames = new List<string>();
+
+                foreach (ulong u in users)
+                {
+                    var temp = await _client.GetUserAsync(u);
+                    usernames.Add(temp.Username);
+                }
+
+                DataColumn[] dataColumns = new DataColumn[users.Count];
+                for (var i = 0; i < users.Count; i++)
+                {
+                    await CheckReactionsOfMessage(users[i]);
+
+                    dataColumns[i] = new DataColumn() ;
+                    dataColumns[i].username = usernames[i];
+                    for (var j =0; j < temp_table.Count(); j++)
+                    {
+                        string emoji = temp_table[j] ? "✅" : "🟡";
+                        switch (j)
+                        {
+                            case 0:
+                                dataColumns[i].mon = emoji; break;
+                            case 1:
+                                dataColumns[i].tue = emoji; break;
+                            case 2:
+                                dataColumns[i].wed = emoji; break;
+                            case 3:
+                                dataColumns[i].thu = emoji; break;
+                            case 4:
+                                dataColumns[i].fri = emoji; break;
+                            case 5:
+                                dataColumns[i].sat = emoji; break;
+                            case 6:
+                                dataColumns[i].sun = emoji; break;
+                        }
+                    }
+                }
+                
+
+                AvailabilityData availabilityData = new AvailabilityData
+                {
+                    title = "Availability",
+                    columns = new List<Column>
+                    {
+                        new Column { width = 150, title = "Username", dataIndex = "username", align = "right" },
+                        new Column { width = 50, title = "Mon", dataIndex = "mon", align = "right" },
+                        new Column { width = 50, title = "Tue", dataIndex = "tue", align = "right" },
+                        new Column { width = 50, title = "Wed", dataIndex = "wed", align = "right" },
+                        new Column { width = 50, title = "Thu", dataIndex = "thu", align = "right" },
+                        new Column { width = 50, title = "Fri", dataIndex = "fri", align = "right" },
+                        new Column { width = 50, title = "Sat", dataIndex = "sat", align = "right" },
+                        new Column { width = 50, title = "Sun", dataIndex = "sun", align = "right" }
+                     },
+                    dataSource = new List<object>
+                    {
+                        '-',
+                    }
+                };
+
+                foreach (DataColumn d in dataColumns)
+                {
+                    availabilityData.dataSource.Add(d);
+                }
+
+                string json = JsonConvert.SerializeObject(availabilityData, Formatting.Indented);
+
+                Console.WriteLine(json);
+                using (HttpClient client = new HttpClient())
+                {
+                    string apiUrl = $"https://api.quickchart.io/v1/table?data={json}";
+
+                    try
+                    {
+                        byte[] imageBytes = await client.GetByteArrayAsync(apiUrl);
+                        await userMessage.Channel.SendFileAsync(new MemoryStream(imageBytes), "image.png");
+                    }
+                    catch (HttpRequestException ex)
+                    {
+                        Console.WriteLine($"HTTP request error: {ex.Message}");
+                    }
+                }
+            }
+            Console.WriteLine("message finished received\n");
+        }
+
+        /*[SlashCommand("food", "Tell us about your favorite food!")]
+        public async Task FoodPreference()
+        {
+            var mb = new ModalBuilder()
+            .WithTitle("Fav Food")
+            .WithCustomId("food_menu")
+            .AddTextInput("What??", "food_name", placeholder: "Pizza")
+            .AddTextInput("Why??", "food_reason", Discord.TextInputStyle.Paragraph,
+                "Kus it's so tasty");
+
+            await Context.Interaction.RespondWithModalAsync(mb.Build());
+        }*/
+
+        private void setupRead()
+        {
+            try
+            {
+                using (StreamReader reader = new StreamReader(filePath))
+                {
+                    string line;
+
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        string[] strings = line.Split(',');
+                        List<ulong> l = new List<ulong>();
+                        foreach (string s in strings)
+                        {
+                            l.Add(ulong.Parse(s));
+                            Console.WriteLine(s);
+                        }
+                        //Console.WriteLine(l[0].ToString());
+                        if (!users.Contains(l[0]))
+                        {
+                            users.Add(l[0]);
+                            pmap[l[0]] = new ULongPair(l[1], l[2]);
+                            Console.WriteLine(line);
+                        }                        
+                    }
+                }
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Error reading file: {ex.Message}");
+            }
+        }
+
+        public async Task CheckReactionsOfMessage(ulong userId)
+        {
+            ULongPair p = pmap[userId];
+
+            for (int i = 0; i < 7; i++)
+            {
+                temp_table[i] = false;
+            }
+
+            IDMChannel channel = (IDMChannel) await _client.GetDMChannelAsync(p.First);
+            if (channel == null)
+            {
+                Console.WriteLine("CHANNEL NOT FOUND!!!");
+                return;
+            }
+            else
+            {
+                Console.WriteLine("channel Located");
+                IUserMessage message = (IUserMessage) await channel.GetMessageAsync(p.Second);
+                Console.WriteLine("message located");
+                for (var i = 0; i < 7; i++)
+                {
+                    // users
+                    var users = await message.GetReactionUsersAsync(emotes[i], Int32.MaxValue).FlattenAsync();
+                    Console.WriteLine("reactions located");
+
+                    Console.WriteLine("EMOJI " + (i + 1).ToString());
+                    foreach (IUser user in users)
+                    {
+                        if (user.Id == userId)
+                        {
+                            temp_table[i] = true;
+                            Console.WriteLine($"User: {user.Username}#{user.Discriminator}");
+                            continue;
+                        }
+                    }
+                }
+                foreach (Boolean b in temp_table)
+                {
+                    Console.WriteLine(b.ToString());
+                }
+            }
+
+
+        }
+
+
+
+
+
+        private async Task GetUserById(ulong userId)
+        {
+            Console.WriteLine(userId.ToString());
+            user = await _client.GetUserAsync(userId);
+
+            if (user != null)
+            {
+                /*Console.WriteLine($"User ID: {user.Id}");
+                Console.WriteLine($"User Username: {user.Username}");
+                Console.WriteLine($"User Discriminator: {user.Discriminator}");*/
+            }
+            else
+            {
+                Console.WriteLine("User not found.");
+            }
+        }
+
+
+        private async Task OnMessageReceived(SocketMessage message)
+        {
+            if (message.Author is SocketGuildUser user)
+            {
+                var currentGuild = user.Guild;
+
+                if (currentGuild != null)
+                {
+                    Console.WriteLine($"Current Guild Name: {currentGuild.Name}");
+                    Console.WriteLine($"Current Guild ID: {currentGuild.Id}");
+                }
+            }
+        }
+
+
+        /* private async Task CheckUserReaction(ulong userId, ulong messageId)
+         {
+             // Get the channel where the message was sent
+             var channel = _client.GetChannel(YOUR_CHANNEL_ID) as SocketTextChannel;
+
+             // Get the message using the message ID
+             var message = await channel.GetMessageAsync(messageId) as IUserMessage;
+
+             // Check if the user's ID is among the list of users who have reacted to the message
+             var userReaction = message.Reactions.FirstOrDefault(reaction => reaction.Value.ReactionUsers.Any(user => user.Id == userId));
+
+             if (userReaction.Key != null)
+             {
+                 // User has reacted to the message
+                 Console.WriteLine($"User with ID {userId} has reacted to the message.");
+             }
+             else
+             {
+                 // User has not reacted to the message
+                 Console.WriteLine($"User with ID {userId} has not reacted to the message.");
+             }
+         }*/
+
+
+        private Task OnReactionAdded(Cacheable<IUserMessage, ulong> cacheable1, Cacheable<IMessageChannel, ulong> cacheable2, SocketReaction reaction)
+        {
+            // Ignore reactions from bots
+            if (reaction.User.IsSpecified && reaction.User.Value.IsBot)
+                return Task.CompletedTask;
+
+            //int selectedDay = GetSelectedDay(reaction.Emote.Name);
+
+            //PrintNumberAsync(selectedDay, cacheable2.Value);
+            return Task.CompletedTask;
+        }
+
+        private async Task SendScheduleMessage(IUser user)
+        {
+            IUserMessage tempMessage = await user.SendMessageAsync($"Hey {user.Username}, please select a day:");
+
+            Console.WriteLine("FIRST CHANNEL: " +  tempMessage.Channel.Id.ToString());
+
+            messages.Add(new ULongPair(tempMessage.Channel.Id, tempMessage.Id));
+
+            try
+            {
+                File.AppendAllText(filePath, $"{user.Id},{tempMessage.Channel.Id},{tempMessage.Id}\n");
+                Console.WriteLine("Message ID has been written to the file.");
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"An error occurred: {ex.Message}");
+            }
+
+            for (var i = 0; i < 7; i++)
+            {
+                await tempMessage.AddReactionAsync(new Emoji(emojis[i]));
+            }
+
+            //_currentSchedule = message;
+        }
+
+        private IUserMessage _currentSchedule;
+
+        /*[ModalInteraction("create_modal_temp")]
+        public async Task HandleModalInput(CreateModal modal)
+        {
+            string input = modal.Description;
+            await RespondAsync(input);
+        }
+
+
+        internal class CreateModal : IModal
+        {
+            public string Title => "Create Event";
+            [InputLabel("Describe your event:")]
+            [ModalTextInput("event_desc", Discord.TextInputStyle.Short, placeholder: "Date, Location, Time, Cost, etc. ", maxLength: 50)]
+            public string Description { get; set; }
+        }*/
     }
 }

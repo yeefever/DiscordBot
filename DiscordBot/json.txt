@@ -1,0 +1,55 @@
+{
+  "title": "Availability",
+  "columns": [
+    {
+      "width": 150,
+      "title": "Username",
+      "dataIndex": "username"
+    },
+    {
+      "width": 50,
+      "title": "Mon",
+      "dataIndex": "Mon",
+      "align": "right"
+    },
+    {
+      "width": 50,
+      "title": "Tues",
+      "dataIndex": "Tues",
+      "align": "right"
+    },
+    {
+      "width": 50,
+      "title": "Wed",
+      "dataIndex": "Wed",
+      "align": "right"
+    },
+    {
+      "width": 50,
+      "title": "Thu",
+      "dataIndex": "Thu",
+      "align": "right"
+    },
+        {
+      "width": 50,
+      "title": "Fri",
+      "dataIndex": "Fri",
+      "align": "right"
+    },
+    {
+      "width": 50,
+      "title": "Sat",
+      "dataIndex": "Sat",
+      "align": "right"
+    },
+    {
+      "width": 50,
+      "title": "Sun",
+      "dataIndex": "Sun",
+      "align": "right"
+    }
+  ],
+  "dataSource": [
+    "-"
+  ]
+}
