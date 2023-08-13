@@ -4,8 +4,8 @@ using Discord.WebSocket;
 //using DSharpPlus.Entities;
 using System.Reflection;
 using System.Runtime.InteropServices;
-//using DSharpPlus.SlashCommands;
-//using SlashCommandAttribute = DSharpPlus.SlashCommands.SlashCommandAttribute;
+using DSharpPlus.SlashCommands;
+using SlashCommandAttribute = DSharpPlus.SlashCommands.SlashCommandAttribute;
 
 namespace DiscordBot
 {

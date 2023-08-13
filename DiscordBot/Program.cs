@@ -35,6 +35,17 @@ using OfficeOpenXml.FormulaParsing.Excel.Functions.DateTime;
 using System.Collections;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
+using DSharpPlus.Interactivity;
+using DSharpPlus.Interactivity.Extensions;
+using DSharpPlus.SlashCommands;
+using OfficeOpenXml.FormulaParsing.LexicalAnalysis;
+using TokenType = DSharpPlus.TokenType;
+using Newtonsoft.Json.Linq;
+using DSharpPlus.EventArgs;
+using System.Security.Cryptography.X509Certificates;
+using DSharpPlus.Entities;
+using InteractionType = DSharpPlus.InteractionType;
+using InteractionResponseType = DSharpPlus.InteractionResponseType;
 
 namespace DiscordBot
 {
@@ -43,7 +54,8 @@ namespace DiscordBot
         //variables
         static void Main(string[] args) => new Program().RunMainAsync().GetAwaiter().GetResult();
 
-        private DiscordSocketClient _client;
+        private static DiscordClient _client { get; set; }
+        private static CommandsNextExtension Commands { get; set; }
         public CommandService _commands;
         private IServiceProvider _services;
 
@@ -68,32 +80,44 @@ namespace DiscordBot
 
         public async Task RunMainAsync()
         {
-            _client = new DiscordSocketClient();
-            _commands = new CommandService();
 
-            _client.Log += _client_Log;
-            _client.ReactionAdded += OnReactionAdded;
-            _client.MessageReceived += OnMessageReceived;
-
-            using IHost host = Host.CreateDefaultBuilder()
-                .ConfigureServices((_, services) =>
-            services
-            // Add the configuration to the registered services
-            // Add the DiscordSocketClient, along with specifying the GatewayIntents and user caching
-            .AddSingleton(x => new DiscordSocketClient(new DiscordSocketConfig
+            var config = new DiscordConfiguration()
             {
-                GatewayIntents = Discord.GatewayIntents.AllUnprivileged,
-                AlwaysDownloadUsers = true,
-                LogLevel = Discord.LogSeverity.Debug
-            }))
-            // Adding console logging
-            // Used for slash commands and their registration with Discord
-            .AddSingleton(x => new InteractionService(x.GetRequiredService<DiscordSocketClient>()))
-            // Required to subscribe to the various client events used in conjunction with Interactions
-            .AddSingleton<InteractionHandler>())
-            .Build();
+                Token = "MTEzNzgxNTcxNjU1MzMxMDIxOA.GiEMYT.NfkWUGGZit-PfEMpJLqeO_3BkBMoPz5ClYPF3k",
+                TokenType = TokenType.Bot
+            };
 
-            emojis.Add("\U0001F1E6");
+            //Initializing the client with this config
+            _client = new DiscordClient(config);
+
+            //Setting our default timeout for Interactivity based commands
+            _client.UseInteractivity(new InteractivityConfiguration()
+            {
+                Timeout = TimeSpan.FromMinutes(2)
+            });
+
+            //EVENT HANDLERS
+            _client.Ready += OnClientReady;
+            //_client.ComponentInteractionCreated += InteractionEventHandler;
+            _client.ModalSubmitted += ModalEventHandler;
+           /* _client.MessageCreated += MessageSendHandler;
+            _client.ModalSubmitted += ModalEventHandler;
+            _client.VoiceStateUpdated += VoiceChannelHandler;
+            _client.GuildMemberAdded += UserJoinHandler;*/
+
+            var commandsConfig = new CommandsNextConfiguration()
+            {
+                EnableDms = true,
+                EnableDefaultHelp = false,
+            };
+
+
+            Commands = _client.UseCommandsNext(commandsConfig);
+            var slashCommandsConfig = _client.UseSlashCommands();
+
+            //Slash Commands
+            slashCommandsConfig.RegisterCommands<FunSL>(1016229761195974698);
+
             emojis.Add("\U0001F1E7");
             emojis.Add("\U0001F1E8");
             emojis.Add("\U0001F1E9");
@@ -117,52 +141,32 @@ namespace DiscordBot
             users = new List<ulong>();
             pmap = new Dictionary<ulong, ULongPair>();
 
-            await RunBotAsync(host);
-
+            //Connect to the Client and get the Bot online
+            _client.ConnectAsync().GetAwaiter().GetResult();
+            Task.Delay(-1).GetAwaiter().GetResult();
         }
 
-        //run bot connection
-        public async Task RunBotAsync(IHost host)
+
+        private static Task OnClientReady(DiscordClient sender, ReadyEventArgs e)
         {
-
-            using IServiceScope serviceScope = host.Services.CreateScope();
-            IServiceProvider provider = serviceScope.ServiceProvider;
-
-            var sCommands = provider.GetRequiredService<InteractionService>();
-            _client = provider.GetRequiredService<DiscordSocketClient>();
-            await provider.GetRequiredService<InteractionHandler>().InitializeAsync();
-
-
-            var config = new DiscordSocketConfig
-             {
-                 GatewayIntents = GatewayIntents.All | GatewayIntents.MessageContent
-             };
-
-
-            _services = new ServiceCollection()
-                    .AddSingleton(_client)
-                    .AddSingleton(_commands)
-                    .BuildServiceProvider();
-
-
-            string token = "MTEzNzgxNTcxNjU1MzMxMDIxOA.GiEMYT.NfkWUGGZit-PfEMpJLqeO_3BkBMoPz5ClYPF3k";
-
-            await RegisterCommandsAsync();
-
-            _client.Ready += async () =>
-            {
-                Console.WriteLine("BOT READY");
-                await sCommands.RegisterCommandsToGuildAsync(1016229761195974698);
-                await sCommands.RegisterCommandsToGuildAsync(1137843173050302564);
-            }; 
-
-            await _client.LoginAsync(Discord.TokenType.Bot, token);
-
-            await _client.StartAsync();
-
-            await Task.Delay(-1);
-            //now the bot is online
+            Console.WriteLine("Bot Ready");
+            return Task.CompletedTask;
         }
+
+        private static async Task InteractionEventHandler(DiscordClient sender, ComponentInteractionCreateEventArgs e)
+        {
+            
+        }
+
+        private static async Task ModalEventHandler(DiscordClient sender, ModalSubmitEventArgs e)
+        {
+            if (e.Interaction.Type == InteractionType.ModalSubmit && e.Interaction.Data.CustomId == "modal")
+            {
+                var values = e.Values;
+                await e.Interaction.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder().WithContent($"{e.Interaction.User.Username} submitted a modal with the input {values.Values.First()}"));
+            }
+        }
+
 
         //client log
         private Task _client_Log(LogMessage arg)
@@ -398,7 +402,9 @@ namespace DiscordBot
                 temp_table[i] = false;
             }
 
-            IDMChannel channel = (IDMChannel) await _client.GetDMChannelAsync(p.First);
+            IDMChannel channel = null;
+                
+               // (IDMChannel) await _client.GetDMChannelAsync(p.First);
             if (channel == null)
             {
                 Console.WriteLine("CHANNEL NOT FOUND!!!");
@@ -441,19 +447,16 @@ namespace DiscordBot
 
         private async Task GetUserById(ulong userId)
         {
-            Console.WriteLine(userId.ToString());
+           /* Console.WriteLine(userId.ToString());
             user = await _client.GetUserAsync(userId);
 
             if (user != null)
             {
-                /*Console.WriteLine($"User ID: {user.Id}");
-                Console.WriteLine($"User Username: {user.Username}");
-                Console.WriteLine($"User Discriminator: {user.Discriminator}");*/
             }
             else
             {
                 Console.WriteLine("User not found.");
-            }
+            }*/
         }
 
 
