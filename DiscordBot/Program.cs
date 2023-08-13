@@ -46,6 +46,9 @@ using System.Security.Cryptography.X509Certificates;
 using DSharpPlus.Entities;
 using InteractionType = DSharpPlus.InteractionType;
 using InteractionResponseType = DSharpPlus.InteractionResponseType;
+using static OfficeOpenXml.ExcelErrorValue;
+using ActivityType = Discord.ActivityType;
+using UserStatus = Discord.UserStatus;
 
 namespace DiscordBot
 {
@@ -83,7 +86,7 @@ namespace DiscordBot
 
             var config = new DiscordConfiguration()
             {
-                Token = "MTEzNzgxNTcxNjU1MzMxMDIxOA.GiEMYT.NfkWUGGZit-PfEMpJLqeO_3BkBMoPz5ClYPF3k",
+                Token = "MTEzNzgxNTcxNjU1MzMxMDIxOA.G0Gnjw.cKl1ylZ8i0docGX0vXRjx8WwTDZKn_gPAK-0qw",
                 TokenType = TokenType.Bot
             };
 
@@ -112,18 +115,17 @@ namespace DiscordBot
             };
 
 
+
             Commands = _client.UseCommandsNext(commandsConfig);
             var slashCommandsConfig = _client.UseSlashCommands();
 
             //Slash Commands
-            slashCommandsConfig.RegisterCommands<FunSL>(1016229761195974698);
-
             emojis.Add("\U0001F1E7");
             emojis.Add("\U0001F1E8");
             emojis.Add("\U0001F1E9");
             emojis.Add("\U0001F1EA");
             emojis.Add("\U0001F1EB");
-            emojis.Add("\U0001F1EC");
+            emojis.Add("\U0001F1EC");           
 
             foreach (string s in emojis)
             {
@@ -141,11 +143,13 @@ namespace DiscordBot
             users = new List<ulong>();
             pmap = new Dictionary<ulong, ULongPair>();
 
+            slashCommandsConfig.RegisterCommands<InteractionModule>(1137843173050302564);
+            slashCommandsConfig.RegisterCommands<InteractionModule>(1016229761195974698);
+
             //Connect to the Client and get the Bot online
             _client.ConnectAsync().GetAwaiter().GetResult();
             Task.Delay(-1).GetAwaiter().GetResult();
         }
-
 
         private static Task OnClientReady(DiscordClient sender, ReadyEventArgs e)
         {
@@ -160,10 +164,30 @@ namespace DiscordBot
 
         private static async Task ModalEventHandler(DiscordClient sender, ModalSubmitEventArgs e)
         {
-            if (e.Interaction.Type == InteractionType.ModalSubmit && e.Interaction.Data.CustomId == "modal")
+            Console.WriteLine("MODAL RECIEVED");
+            if (e.Interaction.Type == InteractionType.ModalSubmit && e.Interaction.Data.CustomId == "create_event")
             {
                 var values = e.Values;
-                await e.Interaction.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder().WithContent($"{e.Interaction.User.Username} submitted a modal with the input {values.Values.First()}"));
+
+                Console.WriteLine(values["name"]);
+                Console.WriteLine(values["desc"]);
+                Console.WriteLine(values["start_mon"]);
+                /*    string name = components
+                        .First(x => x.CustomId == "name").Value;
+                    string desc = components
+                        .First(x => x.CustomId == "desc").Value;
+                    string startmon = components
+                        .First(x => x.CustomId == "start_mon").Value;
+                    //create an obj
+                    KneeEvent e = new KneeEvent();
+                    e.event_desc = desc;
+                    e.event_name = name;
+                    e.start_date = startmon;
+                    e.creator_id = ctx.User.Id;
+                    // Respond to the modal.
+                    await modal.RespondAsync($"Event {e.event_name} with descriptios
+                 */
+               await e.Interaction.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder().WithContent($"{e.Interaction.User.Username} submitted an event called {values["name"]}. description: {values["desc"]} and start date the week of {values["start_mon"]}."));
             }
         }
 
