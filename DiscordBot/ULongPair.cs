@@ -1,11 +1,14 @@
-﻿public class ULongPair
+﻿namespace DiscordBot
 {
-    public ulong First { get; set; }
-    public ulong Second { get; set; }
-
-    public ULongPair(ulong first, ulong second)
+    public class ULongPair
     {
-        First = first;
-        Second = second;
+        public ulong First { get; set; }
+        public ulong Second { get; set; }
+
+        public ULongPair(ulong first, ulong second)
+        {
+            First = first;
+            Second = second;
+        }
     }
 }

@@ -32,13 +32,16 @@ using DSharpPlus;
 using DSharpPlus.CommandsNext;
 using Newtonsoft.Json.Serialization;
 using OfficeOpenXml.FormulaParsing.Excel.Functions.DateTime;
+using System.Collections;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
 
 namespace DiscordBot
 {
     class Program : InteractionModuleBase<SocketInteractionContext>
     {
         //variables
-        static void Main(string[] args) => new Program().RunBotAsync().GetAwaiter().GetResult();
+        static void Main(string[] args) => new Program().RunMainAsync().GetAwaiter().GetResult();
 
         private DiscordSocketClient _client;
         public CommandService _commands;
@@ -61,12 +64,34 @@ namespace DiscordBot
 
         public Program()
         {
+        }
+
+        public async Task RunMainAsync()
+        {
             _client = new DiscordSocketClient();
             _commands = new CommandService();
 
             _client.Log += _client_Log;
             _client.ReactionAdded += OnReactionAdded;
             _client.MessageReceived += OnMessageReceived;
+
+            using IHost host = Host.CreateDefaultBuilder()
+                .ConfigureServices((_, services) =>
+            services
+            // Add the configuration to the registered services
+            // Add the DiscordSocketClient, along with specifying the GatewayIntents and user caching
+            .AddSingleton(x => new DiscordSocketClient(new DiscordSocketConfig
+            {
+                GatewayIntents = Discord.GatewayIntents.AllUnprivileged,
+                AlwaysDownloadUsers = true,
+                LogLevel = Discord.LogSeverity.Debug
+            }))
+            // Adding console logging
+            // Used for slash commands and their registration with Discord
+            .AddSingleton(x => new InteractionService(x.GetRequiredService<DiscordSocketClient>()))
+            // Required to subscribe to the various client events used in conjunction with Interactions
+            .AddSingleton<InteractionHandler>())
+            .Build();
 
             emojis.Add("\U0001F1E6");
             emojis.Add("\U0001F1E7");
@@ -92,16 +117,27 @@ namespace DiscordBot
             users = new List<ulong>();
             pmap = new Dictionary<ulong, ULongPair>();
 
+            await RunBotAsync(host);
+
         }
 
         //run bot connection
-        public async Task RunBotAsync()
+        public async Task RunBotAsync(IHost host)
         {
 
+            using IServiceScope serviceScope = host.Services.CreateScope();
+            IServiceProvider provider = serviceScope.ServiceProvider;
+
+            var sCommands = provider.GetRequiredService<InteractionService>();
+            _client = provider.GetRequiredService<DiscordSocketClient>();
+            await provider.GetRequiredService<InteractionHandler>().InitializeAsync();
+
+
             var config = new DiscordSocketConfig
-            {
-                GatewayIntents = GatewayIntents.All | GatewayIntents.MessageContent
-            };
+             {
+                 GatewayIntents = GatewayIntents.All | GatewayIntents.MessageContent
+             };
+
 
             _services = new ServiceCollection()
                     .AddSingleton(_client)
@@ -113,12 +149,18 @@ namespace DiscordBot
 
             await RegisterCommandsAsync();
 
+            _client.Ready += async () =>
+            {
+                Console.WriteLine("BOT READY");
+                await sCommands.RegisterCommandsToGuildAsync(1016229761195974698);
+                await sCommands.RegisterCommandsToGuildAsync(1137843173050302564);
+            }; 
+
             await _client.LoginAsync(Discord.TokenType.Bot, token);
 
             await _client.StartAsync();
 
             await Task.Delay(-1);
-
             //now the bot is online
         }
 
@@ -131,9 +173,10 @@ namespace DiscordBot
 
         //Register Commands Async
         public async Task RegisterCommandsAsync()
-        { 
-            _client.MessageReceived += HandleCommandAsync;
-            await _commands.AddModulesAsync(Assembly.GetEntryAssembly(), _services);
+        {
+            //_client.MessageReceived += HandleCommandAsync;
+            //await _commands.AddModulesAsync(Assembly.GetEntryAssembly(), _services);
+            //await _commands.AddModuleAsync<Slash>(_services);
         }
 
         public async Task HandleCommandAsync(SocketMessage message)
@@ -312,19 +355,6 @@ namespace DiscordBot
             }
             Console.WriteLine("message finished received\n");
         }
-
-        /*[SlashCommand("food", "Tell us about your favorite food!")]
-        public async Task FoodPreference()
-        {
-            var mb = new ModalBuilder()
-            .WithTitle("Fav Food")
-            .WithCustomId("food_menu")
-            .AddTextInput("What??", "food_name", placeholder: "Pizza")
-            .AddTextInput("Why??", "food_reason", Discord.TextInputStyle.Paragraph,
-                "Kus it's so tasty");
-
-            await Context.Interaction.RespondWithModalAsync(mb.Build());
-        }*/
 
         private void setupRead()
         {
