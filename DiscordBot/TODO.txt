@@ -1,0 +1,33 @@
+﻿FUNCTIONALITY STUFF:
+
+	InteractionModule (Create an event with that name)
+		Checks (No same event id)
+		Write the event to a file with the event id.
+
+		Move chec reactions out and call that every time
+
+	Json/Design-wise (Fix the dates) Allow users to put dates themselves and make a table).
+		Specifics tbd. 
+		
+	/table "event-id" -> show the table for current event
+
+	/events -> show the current events
+
+	/delete "event_id" -> delete current event 
+
+	Allow dude who made the event to invite extra dudes (/invite "event-id" "string of dudes")
+
+	Code cleanup L 
+
+
+
+
+
+	InteractionModule (Send invitations to all parsed users)
+		Second regex to parse tags 
+		If @everyone Break -> throw error message
+		
+		Actual Inviting
+			Move the send invitation method out and make public
+
+

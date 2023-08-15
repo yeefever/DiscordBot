@@ -49,6 +49,9 @@ using InteractionResponseType = DSharpPlus.InteractionResponseType;
 using static OfficeOpenXml.ExcelErrorValue;
 using ActivityType = Discord.ActivityType;
 using UserStatus = Discord.UserStatus;
+using System.Text.Json.Nodes;
+using static Microsoft.IO.RecyclableMemoryStreamManager;
+using System.Diagnostics.Contracts;
 
 namespace DiscordBot
 {
@@ -58,13 +61,12 @@ namespace DiscordBot
         static void Main(string[] args) => new Program().RunMainAsync().GetAwaiter().GetResult();
 
         private static DiscordClient _client { get; set; }
+        private static KneeEvent cur_event;
         private static CommandsNextExtension Commands { get; set; }
         public CommandService _commands;
         private IServiceProvider _services;
 
         private IUser user;
-        private List<string> emojis = new List<string>();
-        private List<IEmote> emotes = new List<IEmote>();
         private List<ULongPair> messages = new List<ULongPair>();
 
         private SocketGuild guild;
@@ -75,7 +77,10 @@ namespace DiscordBot
         private List<ulong> users;
         private string filePath;
 
-        private Boolean[] temp_table = new bool[7];
+        public static List<KneeEvent> events = new List<KneeEvent>();
+
+
+        public static Boolean[] temp_table = new bool[7];
 
         public Program()
         {
@@ -86,7 +91,7 @@ namespace DiscordBot
 
             var config = new DiscordConfiguration()
             {
-                Token = "MTEzNzgxNTcxNjU1MzMxMDIxOA.G0Gnjw.cKl1ylZ8i0docGX0vXRjx8WwTDZKn_gPAK-0qw",
+                Token = "MTEzNzgxNTcxNjU1MzMxMDIxOA.GNH7W0.qTeSrd8ke1NoFP3oIv_acZU9pxmcfB0xEYebqE", // Event v1 bot
                 TokenType = TokenType.Bot
             };
 
@@ -114,24 +119,8 @@ namespace DiscordBot
                 EnableDefaultHelp = false,
             };
 
-
-
             Commands = _client.UseCommandsNext(commandsConfig);
             var slashCommandsConfig = _client.UseSlashCommands();
-
-            //Slash Commands
-            emojis.Add("\U0001F1E7");
-            emojis.Add("\U0001F1E8");
-            emojis.Add("\U0001F1E9");
-            emojis.Add("\U0001F1EA");
-            emojis.Add("\U0001F1EB");
-            emojis.Add("\U0001F1EC");           
-
-            foreach (string s in emojis)
-            {
-                IEmote emote = new Emoji(s);
-                emotes.Add(emote);
-            }
 
             for (var i = 0; i < 7; i++)
             {
@@ -143,12 +132,48 @@ namespace DiscordBot
             users = new List<ulong>();
             pmap = new Dictionary<ulong, ULongPair>();
 
+
+            //Read all the event_ids 
+            string directoryPath = "C:\\Users\\kliu3\\source\\repos\\DiscordBot\\DiscordBot\\events";
+
+            if (Directory.Exists(directoryPath))
+            {
+                string[] fileNames = Directory.GetFiles(directoryPath);
+
+                foreach (string fileName in fileNames)
+                {
+                    string json = File.ReadAllText(fileName);
+                    events.Add(JsonConvert.DeserializeObject<KneeEvent>(json));
+                }
+            }
+            else
+            {
+                Console.WriteLine("Directory does not exist.");
+            }
+
+
             slashCommandsConfig.RegisterCommands<InteractionModule>(1137843173050302564);
             slashCommandsConfig.RegisterCommands<InteractionModule>(1016229761195974698);
+
+            //slashCommandsConfig.RegisterCommands<InteractionModule>();
 
             //Connect to the Client and get the Bot online
             _client.ConnectAsync().GetAwaiter().GetResult();
             Task.Delay(-1).GetAwaiter().GetResult();
+        }
+
+        public static void deleteEvent(String id)
+        {
+            foreach(KneeEvent e in events)
+            {
+                if(e.event_id == id)
+                {
+                    events.Remove(e);
+                    return;
+                }
+            }
+
+            Console.WriteLine("Event doesn't exist bruv");
         }
 
         private static Task OnClientReady(DiscordClient sender, ReadyEventArgs e)
@@ -156,38 +181,139 @@ namespace DiscordBot
             Console.WriteLine("Bot Ready");
             return Task.CompletedTask;
         }
-
-        private static async Task InteractionEventHandler(DiscordClient sender, ComponentInteractionCreateEventArgs e)
-        {
             
+        public static async Task getReactions(ulong channelid, ulong messageid)
+        {
+
+            //get message reacitons
+            var channel = await _client.GetChannelAsync(channelid);
+            DiscordMessage message = null;
+            var dmChannel = channel as DiscordDmChannel;
+            if (dmChannel != null)
+            {
+                message = await dmChannel.GetMessageAsync(messageid);
+                if (message != null)
+                {
+                    Console.WriteLine($"Message Content: {message.Content}");
+                }
+            }
+
+            for (var i = 0; i < 7; i++)
+            {
+                temp_table[i] = false;
+            }
+
+            List<string> emojis = new List<string> { ":one:", ":two:", ":three:", ":four:", ":five:", ":six:", ":seven:" };
+            for (var i = 0; i < 7; i++) 
+            {
+                Console.WriteLine($"EMOJI :{emojis[i]}");
+                var reactions = await message.GetReactionsAsync(DiscordEmoji.FromName(_client, emojis[i]));
+                if(reactions.Count > 1)
+                {
+                    temp_table[i] = true;
+                }
+                await Task.Delay(1000);
+            }
+
         }
 
         private static async Task ModalEventHandler(DiscordClient sender, ModalSubmitEventArgs e)
         {
-            Console.WriteLine("MODAL RECIEVED");
-            if (e.Interaction.Type == InteractionType.ModalSubmit && e.Interaction.Data.CustomId == "create_event")
+            try
             {
-                var values = e.Values;
+                Program tempP = new Program();
+                if (e.Interaction.Type == InteractionType.ModalSubmit && e.Interaction.Data.CustomId == "create_event")
+                {
+                    string filePath = "temp.json";
+                    List<string> userids = null;
+                    try
+                    {
+                        string json = File.ReadAllText(filePath);
+                        dynamic jsonObject = JsonConvert.DeserializeObject(json);
+                        userids = jsonObject.users.ToObject<List<string>>();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Error reading or deserializing JSON: " + ex.Message);
+                    }
 
-                Console.WriteLine(values["name"]);
-                Console.WriteLine(values["desc"]);
-                Console.WriteLine(values["start_mon"]);
-                /*    string name = components
-                        .First(x => x.CustomId == "name").Value;
-                    string desc = components
-                        .First(x => x.CustomId == "desc").Value;
-                    string startmon = components
-                        .First(x => x.CustomId == "start_mon").Value;
-                    //create an obj
-                    KneeEvent e = new KneeEvent();
-                    e.event_desc = desc;
-                    e.event_name = name;
-                    e.start_date = startmon;
-                    e.creator_id = ctx.User.Id;
-                    // Respond to the modal.
-                    await modal.RespondAsync($"Event {e.event_name} with descriptios
-                 */
-               await e.Interaction.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder().WithContent($"{e.Interaction.User.Username} submitted an event called {values["name"]}. description: {values["desc"]} and start date the week of {values["start_mon"]}."));
+                    var values = e.Values;
+
+                    //make new json object and write to actual file with name
+                    cur_event = new KneeEvent()
+                    {
+                        event_name = values["name"],
+                        event_desc = values["desc"],
+                        start_date = values["start_mon"],
+                        invited = userids,
+                        creator_id = e.Interaction.User.Id,
+                        event_id = values["id"],
+                        userIdMessageId = new Dictionary<string, ulong[]>()
+                    };
+
+                    string jsone = JsonConvert.SerializeObject(cur_event, Formatting.Indented);
+                    filePath = $"C:\\Users\\kliu3\\source\\repos\\DiscordBot\\DiscordBot\\events\\{values["id"]}.json";
+                    try
+                    {
+                        File.WriteAllText(filePath, jsone);
+                    }
+                    catch (Exception exc)
+                    {
+                        Console.WriteLine(exc.ToString());
+                    }
+
+                    foreach (string user_id in userids)
+                    {
+                        ulong ulongValue = 0;
+                        try
+                        {
+                            ulongValue = ulong.Parse(user_id);
+                        }
+                        catch (FormatException)
+                        {
+                            Console.WriteLine("Invalid input format. Cannot convert to ulong.");
+                        }
+                        catch (OverflowException)
+                        {
+                            Console.WriteLine("Value is outside the range of ulong.");
+                        }
+
+                        var user = await _client.GetUserAsync(ulongValue);
+                        if (user == null || ulongValue == 0)
+                        {
+                            await e.Interaction.Channel.SendMessageAsync("User not found.");
+                            return;
+                        }
+
+                        try
+                        {
+                            var guild = await _client.GetGuildAsync(e.Interaction.Guild.Id);
+                            if (guild != null)
+                            {
+                                Console.WriteLine("GUILD: " + guild.Name.ToString());
+                                var member = await guild.GetMemberAsync(user.Id);
+                                await e.Interaction.Channel.SendMessageAsync($"Sending DM invitation to : {member.Username}.");
+                                await e.Interaction.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder().WithContent($"{e.Interaction.User.Username} submitted a modal with the input {values.Values.First()}"));
+                                await tempP.SendScheduleMessage(member);
+                            }
+                            else
+                            {
+                                await e.Interaction.Channel.SendMessageAsync($"Cannot find the server in question you clown.");
+                            }
+
+                        }
+                        catch (Exception ex)
+                        {
+                            await e.Interaction.Channel.SendMessageAsync($"Cannot send DM to someone out of server.");
+                            await e.Interaction.Channel.SendMessageAsync($"Failed to send the message to {user.Username}#{user.Discriminator}: {ex.Message}");
+                        }
+                    }
+                    //await Task.Delay(10000);
+                }
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine("MODAL RECEIVED ERROR: " + ex.ToString());
             }
         }
 
@@ -236,6 +362,7 @@ namespace DiscordBot
                 string userId;
                 if (parts.Length >= 2)
                 {
+
                     Regex regex = new Regex(@"<@(\d+)>");
                     for (var i = 1; i < parts.Length; i++)
                     {
@@ -252,174 +379,15 @@ namespace DiscordBot
                             userId = parts[i];
                         }
 
-                        ulong ulongValue = 0;
-                        try
-                        {
-                            ulongValue = ulong.Parse(userId);
-                        }
-                        catch (FormatException)
-                        {
-                            Console.WriteLine("Invalid input format. Cannot convert to ulong.");
-                        }
-                        catch (OverflowException)
-                        {
-                            Console.WriteLine("Value is outside the range of ulong.");
-                        }
-
-                        await GetUserById(ulongValue);
-                        await userMessage.Channel.SendMessageAsync($"User Id: {user.Id}.");
-                        await userMessage.Channel.SendMessageAsync($"User Username: {user.Username}");
-                        await userMessage.Channel.SendMessageAsync($"User Discriminator: {user.Discriminator}");
-                        if (user == null || ulongValue == 0)
-                        {
-                            await userMessage.Channel.SendMessageAsync("User not found.");
-                            return;
-                        }
-
-                        try
-                        {
-                            await userMessage.Channel.SendMessageAsync($"Sending DM invitation to : {user.Username}.");
-                            await SendScheduleMessage(user);
-                        }
-                        catch (Exception ex)
-                        {
-                            await userMessage.Channel.SendMessageAsync($"Failed to send the message to {user.Username}#{user.Discriminator}: {ex.Message}");
-                        }
+                        //await SendDM(userId, userMessage);
                     }
                 }
-            }
-
-            if(messageContent == "!reactions")
-            {
-                //await CheckReactionsOfMessage(2323, 23232);
-                await CheckReactionsOfMessage(23);
-            }
-
-            if(messageContent == "!table")
-            {
-                setupRead();
-
-                List<string> usernames = new List<string>();
-
-                foreach (ulong u in users)
-                {
-                    var temp = await _client.GetUserAsync(u);
-                    usernames.Add(temp.Username);
-                }
-
-                DataColumn[] dataColumns = new DataColumn[users.Count];
-                for (var i = 0; i < users.Count; i++)
-                {
-                    await CheckReactionsOfMessage(users[i]);
-
-                    dataColumns[i] = new DataColumn() ;
-                    dataColumns[i].username = usernames[i];
-                    for (var j =0; j < temp_table.Count(); j++)
-                    {
-                        string emoji = temp_table[j] ? "✅" : "🟡";
-                        switch (j)
-                        {
-                            case 0:
-                                dataColumns[i].mon = emoji; break;
-                            case 1:
-                                dataColumns[i].tue = emoji; break;
-                            case 2:
-                                dataColumns[i].wed = emoji; break;
-                            case 3:
-                                dataColumns[i].thu = emoji; break;
-                            case 4:
-                                dataColumns[i].fri = emoji; break;
-                            case 5:
-                                dataColumns[i].sat = emoji; break;
-                            case 6:
-                                dataColumns[i].sun = emoji; break;
-                        }
-                    }
-                }
-                
-
-                AvailabilityData availabilityData = new AvailabilityData
-                {
-                    title = "Availability",
-                    columns = new List<Column>
-                    {
-                        new Column { width = 150, title = "Username", dataIndex = "username", align = "right" },
-                        new Column { width = 50, title = "Mon", dataIndex = "mon", align = "right" },
-                        new Column { width = 50, title = "Tue", dataIndex = "tue", align = "right" },
-                        new Column { width = 50, title = "Wed", dataIndex = "wed", align = "right" },
-                        new Column { width = 50, title = "Thu", dataIndex = "thu", align = "right" },
-                        new Column { width = 50, title = "Fri", dataIndex = "fri", align = "right" },
-                        new Column { width = 50, title = "Sat", dataIndex = "sat", align = "right" },
-                        new Column { width = 50, title = "Sun", dataIndex = "sun", align = "right" }
-                     },
-                    dataSource = new List<object>
-                    {
-                        '-',
-                    }
-                };
-
-                foreach (DataColumn d in dataColumns)
-                {
-                    availabilityData.dataSource.Add(d);
-                }
-
-                string json = JsonConvert.SerializeObject(availabilityData, Formatting.Indented);
-
-                Console.WriteLine(json);
-                using (HttpClient client = new HttpClient())
-                {
-                    string apiUrl = $"https://api.quickchart.io/v1/table?data={json}";
-
-                    try
-                    {
-                        byte[] imageBytes = await client.GetByteArrayAsync(apiUrl);
-                        await userMessage.Channel.SendFileAsync(new MemoryStream(imageBytes), "image.png");
-                    }
-                    catch (HttpRequestException ex)
-                    {
-                        Console.WriteLine($"HTTP request error: {ex.Message}");
-                    }
-                }
-            }
-            Console.WriteLine("message finished received\n");
-        }
-
-        private void setupRead()
-        {
-            try
-            {
-                using (StreamReader reader = new StreamReader(filePath))
-                {
-                    string line;
-
-                    while ((line = reader.ReadLine()) != null)
-                    {
-                        string[] strings = line.Split(',');
-                        List<ulong> l = new List<ulong>();
-                        foreach (string s in strings)
-                        {
-                            l.Add(ulong.Parse(s));
-                            Console.WriteLine(s);
-                        }
-                        //Console.WriteLine(l[0].ToString());
-                        if (!users.Contains(l[0]))
-                        {
-                            users.Add(l[0]);
-                            pmap[l[0]] = new ULongPair(l[1], l[2]);
-                            Console.WriteLine(line);
-                        }                        
-                    }
-                }
-            }
-            catch (IOException ex)
-            {
-                Console.WriteLine($"Error reading file: {ex.Message}");
             }
         }
 
         public async Task CheckReactionsOfMessage(ulong userId)
         {
-            ULongPair p = pmap[userId];
+            /*ULongPair p = pmap[userId];
 
             for (int i = 0; i < 7; i++)
             {
@@ -460,123 +428,59 @@ namespace DiscordBot
                 {
                     Console.WriteLine(b.ToString());
                 }
-            }
-
-
-        }
-
-
-
-
-
-        private async Task GetUserById(ulong userId)
-        {
-           /* Console.WriteLine(userId.ToString());
-            user = await _client.GetUserAsync(userId);
-
-            if (user != null)
-            {
-            }
-            else
-            {
-                Console.WriteLine("User not found.");
             }*/
+
+
         }
 
-
-        private async Task OnMessageReceived(SocketMessage message)
+        public async Task SendScheduleMessage(DiscordMember user)
         {
-            if (message.Author is SocketGuildUser user)
+            var DMChannel = await user.CreateDmChannelAsync();
+            Console.WriteLine(DMChannel.Id);
+
+
+            var embed = new DiscordEmbedBuilder
             {
-                var currentGuild = user.Guild;
+                Title = $"{cur_event.event_name} Availability Check",
+                Color = new DiscordColor(0xFFC5DB)
+            };
 
-                if (currentGuild != null)
-                {
-                    Console.WriteLine($"Current Guild Name: {currentGuild.Name}");
-                    Console.WriteLine($"Current Guild ID: {currentGuild.Id}");
-                }
-            }
-        }
+            string message = $"Hey {user.Username}, checking availability for {cur_event.event_name}\n" +
+                        $"• **Description:** {cur_event.event_desc}\n" +
+                        $"• **Start Date:** {cur_event.start_date}\n" +
+                        $"*Start date is just the monday we start counting availability on. So, react with 1 if free on Monday, 2 for following tuesday and so on and so forth* \n" + 
+                        "React below";
 
-
-        /* private async Task CheckUserReaction(ulong userId, ulong messageId)
-         {
-             // Get the channel where the message was sent
-             var channel = _client.GetChannel(YOUR_CHANNEL_ID) as SocketTextChannel;
-
-             // Get the message using the message ID
-             var message = await channel.GetMessageAsync(messageId) as IUserMessage;
-
-             // Check if the user's ID is among the list of users who have reacted to the message
-             var userReaction = message.Reactions.FirstOrDefault(reaction => reaction.Value.ReactionUsers.Any(user => user.Id == userId));
-
-             if (userReaction.Key != null)
-             {
-                 // User has reacted to the message
-                 Console.WriteLine($"User with ID {userId} has reacted to the message.");
-             }
-             else
-             {
-                 // User has not reacted to the message
-                 Console.WriteLine($"User with ID {userId} has not reacted to the message.");
-             }
-         }*/
+            embed.Description = message;
 
 
-        private Task OnReactionAdded(Cacheable<IUserMessage, ulong> cacheable1, Cacheable<IMessageChannel, ulong> cacheable2, SocketReaction reaction)
-        {
-            // Ignore reactions from bots
-            if (reaction.User.IsSpecified && reaction.User.Value.IsBot)
-                return Task.CompletedTask;
+            var tempMessage = await DMChannel.SendMessageAsync(embed: embed);
 
-            //int selectedDay = GetSelectedDay(reaction.Emote.Name);
+            cur_event.userIdMessageId.Add(user.Username, new ulong[] {user.Id, tempMessage.Channel.Id, tempMessage.Id } );
 
-            //PrintNumberAsync(selectedDay, cacheable2.Value);
-            return Task.CompletedTask;
-        }
+            //Rewrite to JSON
 
-        private async Task SendScheduleMessage(IUser user)
-        {
-            IUserMessage tempMessage = await user.SendMessageAsync($"Hey {user.Username}, please select a day:");
-
-            Console.WriteLine("FIRST CHANNEL: " +  tempMessage.Channel.Id.ToString());
-
-            messages.Add(new ULongPair(tempMessage.Channel.Id, tempMessage.Id));
-
+            string jsone = JsonConvert.SerializeObject(cur_event, Formatting.Indented);
+            filePath = $"C:\\Users\\kliu3\\source\\repos\\DiscordBot\\DiscordBot\\events\\{cur_event.event_id}.json";
             try
             {
-                File.AppendAllText(filePath, $"{user.Id},{tempMessage.Channel.Id},{tempMessage.Id}\n");
-                Console.WriteLine("Message ID has been written to the file.");
+                Console.WriteLine($"Written to {filePath}");
+                Console.WriteLine(jsone);
+                File.WriteAllText(filePath, jsone);
             }
-            catch (IOException ex)
+            catch (Exception exc)
             {
-                Console.WriteLine($"An error occurred: {ex.Message}");
+                Console.WriteLine(exc.ToString());
             }
 
-            for (var i = 0; i < 7; i++)
+            List<string> emojis = new List<string> { ":one:", ":two:", ":three:", ":four:", ":five:", ":six:", ":seven:" };
+            foreach (string s in emojis)
             {
-                await tempMessage.AddReactionAsync(new Emoji(emojis[i]));
-            }
-
-            //_currentSchedule = message;
+                Console.WriteLine($"EMOJI :{s}");
+                await tempMessage.CreateReactionAsync(DiscordEmoji.FromName(_client, s));
+                await Task.Delay(1000);
+            } 
+            Console.WriteLine("DONE");
         }
-
-        private IUserMessage _currentSchedule;
-
-        /*[ModalInteraction("create_modal_temp")]
-        public async Task HandleModalInput(CreateModal modal)
-        {
-            string input = modal.Description;
-            await RespondAsync(input);
-        }
-
-
-        internal class CreateModal : IModal
-        {
-            public string Title => "Create Event";
-            [InputLabel("Describe your event:")]
-            [ModalTextInput("event_desc", Discord.TextInputStyle.Short, placeholder: "Date, Location, Time, Cost, etc. ", maxLength: 50)]
-            public string Description { get; set; }
-        }*/
     }
 }
