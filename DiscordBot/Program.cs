@@ -89,9 +89,14 @@ namespace DiscordBot
         public async Task RunMainAsync()
         {
 
+            string configFileContent = File.ReadAllText("C:\\Users\\kliu3\\source\\repos\\DiscordBot\\DiscordBot\\config_file.json");
+            JsonDocument configDocument = JsonDocument.Parse(configFileContent);
+            JsonElement root = configDocument.RootElement;
+            string config_token = root.GetProperty("token").GetString();
+
             var config = new DiscordConfiguration()
             {
-                Token = "MTEzNzgxNTcxNjU1MzMxMDIxOA.GNH7W0.qTeSrd8ke1NoFP3oIv_acZU9pxmcfB0xEYebqE", // Event v1 bot
+                Token = config_token,
                 TokenType = TokenType.Bot
             };
 

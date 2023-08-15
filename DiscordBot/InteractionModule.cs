@@ -265,12 +265,12 @@ namespace DiscordBot
             }          
         }
 
-        /*
+        
             [SlashCommand("invite", "Posthumous Invite")]
-            public async Task Invite (InteractionContext ctx, )
+            public async Task Invite (InteractionContext ctx, [ChoiceProvider(typeof(InviteDudesChoiceProvider))][Option("event_id", "event id in question")] string option)
             {
                 //          /invite <event id> <@username> 
-            }*/
+            }
 
 
             /*
