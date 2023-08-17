@@ -85,6 +85,8 @@ namespace DiscordBot
         private static readonly SemaphoreSlim createLock = new SemaphoreSlim(2);
         private static readonly SemaphoreSlim deleteLock = new SemaphoreSlim(3);
 
+        public static bool userIsBot = false;
+
 
         //TO DO: FIX TYPING LATER. MAP <event_id> -> event object
 
@@ -94,6 +96,8 @@ namespace DiscordBot
         public static Boolean[] temp_table = new bool[10];
         public static string path = null;
         private static Timer _timer;
+        private string knee_id = null;
+        public static bool readingAvail = false;
 
         public Program()
         {
@@ -101,12 +105,12 @@ namespace DiscordBot
 
         public async Task RunMainAsync()
         {
-
             var configFileContent = File.ReadAllText("C:\\Users\\kliu3\\source\\repos\\DiscordBot\\DiscordBot\\config_file.json");
             JsonDocument configDocument = JsonDocument.Parse(configFileContent);
             JsonElement root = configDocument.RootElement;
             string config_token = root.GetProperty("token").GetString();
             path = root.GetProperty("path").ToString();
+            knee_id = root.GetProperty("guild_id").ToString();
            
             var config = new DiscordConfiguration()
             {
@@ -149,16 +153,15 @@ namespace DiscordBot
             readAll();
 
            slashCommandsConfig = _client.UseSlashCommands();
-           slashCommandsConfig.RegisterCommands<InteractionModule>(1137843173050302564);
-           slashCommandsConfig.RegisterCommands<InteractionModule>(1016229761195974698);
-           // slashCommandsConfig.RegisterCommands<InteractionModule>();
+           slashCommandsConfig.RegisterCommands<InteractionModule>(ulong.Parse("760547972068147210"));
+            // global reg slashCommandsConfig.RegisterCommands<InteractionModule>();
 
             //Connect to the Client and get the Bot online
             _client.ConnectAsync().GetAwaiter().GetResult();
             Task.Delay(-1).GetAwaiter().GetResult();
         }
 
-        public static async void Reconnect()
+        public static async Task Reconnect()
         {
            await _client.DisconnectAsync();
            await _client.ConnectAsync();
@@ -236,9 +239,9 @@ namespace DiscordBot
         private static async Task OnClientReady(DiscordClient sender, ReadyEventArgs e)
         {
             await readAvail();
-
-            // Schedule the async method to run every 10 minutes
-            _timer = new Timer(async _ => await readAvail(), null, TimeSpan.Zero, TimeSpan.FromMinutes(10));
+            Console.WriteLine("BOOPPOPPOP");
+            await Task.Delay(TimeSpan.FromMinutes(30));
+            await Reconnect();
         }
 
         public static async Task getReactions(ulong channelid, ulong messageid)
@@ -262,10 +265,10 @@ namespace DiscordBot
                 temp_table[i] = false;
             }
 
-            List<string> emojis = new List<string> { ":one:", ":two:", ":three:", ":four:", ":five:", ":six:", ":seven:", ":eight:", ":nine:", ":zero:"};
+            List<string> emojis = new List<string> { ":dog:", ":mouse:", ":hamster:", ":bear:", ":tiger:", ":cow:", ":pig:", ":frog:", ":boar:", ":otter:" };
             for (var i = 0; i < 10; i++) 
             {
-                Console.WriteLine($"EMOJI :{emojis[i]}");
+                Console.WriteLine($"{message.Id} EMOJI :{emojis[i]}");
                 try
                 {
                     var reactions = await message.GetReactionsAsync(DiscordEmoji.FromName(_client, emojis[i]));
@@ -281,6 +284,12 @@ namespace DiscordBot
                 }
             }
 
+        }
+
+        public static async Task checkBot(ulong userid)
+        {
+            var user = await _client.GetUserAsync(userid);
+            userIsBot = user.IsBot;
         }
 
         private static async Task ModalEventHandler(DiscordClient sender, ModalSubmitEventArgs e)
@@ -315,6 +324,15 @@ namespace DiscordBot
                         userIdMessageId = new Dictionary<string, ulong[]>(),
                         lastUpdate = DateTime.Now
                     };
+
+                    foreach(KneeEvent ev in events)
+                    {
+                        if (ev.event_id == values["id"])
+                        {
+                            await e.Interaction.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder().WithContent($"Event with that id already exists  :( "));
+                            return;
+                        }
+                    }
 
                     try
                     {
@@ -374,6 +392,7 @@ namespace DiscordBot
                             await e.Interaction.Channel.SendMessageAsync($"Failed to send the message to {user.Username}#{user.Discriminator}: {ex.Message}");
                         }
                     }
+                    Console.WriteLine("DONE SENDING ALL :)");
                 }
             }
             catch(Exception ex)
@@ -381,30 +400,13 @@ namespace DiscordBot
                 Console.WriteLine("MODAL RECEIVED ERROR: " + ex.ToString());
             }
             readAll();
-            Program.Reconnect();
         }
 
-        public static async Task DeleteMessage(ulong c, ulong m)
-        {
-            DiscordChannel channel = await _client.GetChannelAsync(c);
-            DiscordMessage message = await channel.GetMessageAsync(m);
-
-            if (message != null)
-            {
-                await message.DeleteAsync();
-                Console.WriteLine($"Message with ID {m} deleted.");
-            }
-            else
-            {
-                Console.WriteLine($"Message with ID {m} not found.");
-            }
-        }
 
 
         //client log
         private Task _client_Log(LogMessage arg)
         {
-            Console.WriteLine(arg);
             string json = JsonConvert.SerializeObject(arg, Formatting.Indented);
 
             // Specify the path for the output JSON file
@@ -414,78 +416,53 @@ namespace DiscordBot
             return Task.CompletedTask;
         }
 
-        //Register Commands Async
-        public async Task RegisterCommandsAsync()
+        public static async Task SendHelpMessage(ulong guildId, ulong userId)
         {
-            //_client.MessageReceived += HandleCommandAsync;
-            //await _commands.AddModulesAsync(Assembly.GetEntryAssembly(), _services);
-            //await _commands.AddModuleAsync<Slash>(_services);
-        }
-
-        public async Task HandleCommandAsync(SocketMessage message)
-        {
-            if (message.Author.IsBot || message is not IUserMessage userMessage)
-                return;
-
-            var textChannel = message.Channel as ITextChannel;
-
-            var fetchedMessage = await textChannel.GetMessageAsync(message.Id) as IUserMessage;
-
-            if (fetchedMessage == null)
-                return;
-
-            string messageContent = fetchedMessage.Content;
-
-            Console.WriteLine("Received message: " + messageContent);
-
-            if (messageContent.StartsWith("!invite"))
+            var guild = await _client.GetGuildAsync(guildId);
+            DiscordMember member = null;
+            if (guild != null)
             {
-                // Check permission
-                if (!(userMessage.Author is SocketGuildUser guildUser) || !guildUser.GuildPermissions.Administrator)
-                {
-                    await userMessage.Channel.SendMessageAsync("You don't have permission to use this command.");
-                    return;
-                }
-
-                var parts = messageContent.Split(" ");
-                string userId;
-                if (parts.Length >= 2)
-                {
-
-                    Regex regex = new Regex(@"<@(\d+)>");
-                    for (var i = 1; i < parts.Length; i++)
-                    {
-
-                        Match match = regex.Match(parts[i]);
-
-                        // find if possible : (
-                        if (match.Success)
-                        {
-                            userId = match.Groups[1].Value;
-                        }
-                        else
-                        {
-                            userId = parts[i];
-                        }
-
-                        //await SendDM(userId, userMessage);
-                    }
-                }
+                member = await guild.GetMemberAsync(userId);
             }
+
+            var DMChannel = await member.CreateDmChannelAsync();
+
+            var embed = new DiscordEmbedBuilder
+            {
+                Title = $"Bocchi the Bot Help",
+                Color = new DiscordColor(0xFFC5DB)
+            };
+
+            string content = "**avail [Admin Only]:** \nShow availiability for each event - which clowns are coming and when? \n" +
+                " (updates every 30 minutes due to wonky c# lib)\n " +
+                "**create:**\n Create an event\n " +
+                "**delete [Admin Only]:** \nDelete an event :( rip plans sad trombone \n" +
+                "**desc:**\n Show event description - what's happening? duration? who's invited?\n" +
+                "**invite [Admin Only]:** \n Forgot someone?  Send a posthumous invite! \n" +
+                "**ping:**\n secret message. very cool!\n" +
+                "**showevents:**\n Show current events";
+
+            embed.Description = content;
+
+
+            var tempMessage = await DMChannel.SendMessageAsync(embed: embed);
         }
 
 
         public static async Task readAvail()
         {
+            DiscordActivity activity = new DiscordActivity();
+            activity.Name = "Reading availability stuff ...";
+            await _client.UpdateStatusAsync(activity);
             //Choice provider for number of events. 
             //Call a read on the nubmer of files and grab their file names and descriptions briefly.
-
+            readingAvail = true;
             DateTime currentDate = DateTime.Now;
-            foreach (KneeEvent ev in Program.events)
+            var i = 0;
+            foreach(KneeEvent ev in Program.events)
             {
                 Dictionary<String, ulong[]> map = ev.userIdMessageId;
                 DataColumn[] dataColumns = new DataColumn[map.Count];
-                var i = 0;
                 foreach (var kvp in map)
                 {
                     await Program.getReactions(kvp.Value[1], kvp.Value[2]);
@@ -549,8 +526,6 @@ namespace DiscordBot
 
                 string json = JsonConvert.SerializeObject(availabilityData, Formatting.Indented);
 
-                Console.WriteLine(json);
-
                 using (HttpClient client = new HttpClient())
                 {
                     string apiUrl = $"https://api.quickchart.io/v1/table?data={json}";
@@ -569,6 +544,12 @@ namespace DiscordBot
                 }
                 ev.lastUpdate = DateTime.Now;
             }
+            readingAvail = false;
+            activity = new DiscordActivity("");
+            var status = DSharpPlus.Entities.UserStatus.Online;
+
+            await _client.UpdateStatusAsync(activity, status);
+            await _client.UpdateStatusAsync(activity);
         }
 
 
@@ -578,8 +559,7 @@ namespace DiscordBot
             var guild = await _client.GetGuildAsync(guildId);
             DiscordMember member = null;
             if (guild != null)
-            {
-                Console.WriteLine("GUILD: " + guild.Name.ToString());
+            { 
                 member = await guild.GetMemberAsync(userId);
             }
             else
@@ -590,8 +570,6 @@ namespace DiscordBot
 
 
             var DMChannel = await member.CreateDmChannelAsync();
-            Console.WriteLine(DMChannel.Id);
-
 
             var embed = new DiscordEmbedBuilder
             {
@@ -602,21 +580,19 @@ namespace DiscordBot
             string message = $"Hey {member.Username}, checking availability for {cur_event.event_name}\n" +
                         $"• **Description:** {cur_event.event_desc}\n" +
                         $"• **Start Date:** {cur_event.start_date}\n" +
-                        $"*Each number below corresponds to a date on the table. React for availability. \n";
+                        $"*Each animal thing below corresponds to a date on the table. React for availability. \n";
 
 
             DateTime currentDate = DateTime.ParseExact(cur_event.start_date, "MM/dd", null);
-
+            List<string> emojis = new List<string> { ":dog:", ":mouse:", ":hamster:", ":bear:", ":tiger:", ":cow:", ":pig:", ":frog:", ":boar:", ":otter:" };
 
             message +=  ("Day   |   Date\n");
             message += ("---------------\n");
 
-            for (int i = 1; i <= 10; i++)
+            for (int i = 0; i < 10; i++)
             {
-                if(i == 10)
-                    message += ($"**0** |   {currentDate:MM/dd}\n");
-                else
-                    message += ($"**{i,-5}** |   {currentDate:MM/dd}\n");
+
+                message += $"{emojis[i]} | {currentDate:MM/dd}\n";
                 currentDate = currentDate.AddDays(1);
             }
             
@@ -633,23 +609,18 @@ namespace DiscordBot
             var filePath = $"{path}events\\{cur_event.event_id}.json";
             try
             {
-                Console.WriteLine($"Written to {filePath}");
-                Console.WriteLine(jsone);
                 File.WriteAllText(filePath, jsone);
             }
             catch (Exception exc)
             {
-                Console.WriteLine(exc.ToString());
             }
 
-            List<string> emojis = new List<string> { ":one:", ":two:", ":three:", ":four:", ":five:", ":six:", ":seven:", ":eight:", ":nine:", ":zero:"  };
             foreach (string s in emojis)
             {
-                Console.WriteLine($"EMOJI :{s}");
                 await tempMessage.CreateReactionAsync(DiscordEmoji.FromName(_client, s));
-                //await Task.Delay(1000);
+                await Task.Delay(500);
             } 
-            Console.WriteLine("DONE");
+            Console.WriteLine($"DONE SENDING TO {member.Username}");
         }
     }
 }

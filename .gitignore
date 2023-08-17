@@ -367,3 +367,6 @@ myfolder/
 
 #Config File
 config_file.json
+
+#Avail images folder
+avail_images/

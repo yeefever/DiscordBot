@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <Folder Include="avail_images\" />
+    <Folder Include="events\" />
   </ItemGroup>
 
 </Project>

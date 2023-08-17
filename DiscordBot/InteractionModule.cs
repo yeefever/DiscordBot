@@ -47,23 +47,15 @@ namespace DiscordBot
         [SlashCommand("create", "Create an event.")]
         public async Task CreateEvent(InteractionContext ctx, [Option("InviteDudes", "ping the dudes please :)")] string input)
         {
-
-            if (Program.isCommandLocked[2])
+            var userRoles = ctx.Member.Roles;
+            // Check if the user has the "admin" role
+            if (userRoles.Any(role => role.Name.ToLower() == "admin"))
             {
-                var responseBuilder = new DiscordInteractionResponseBuilder()
-                    .WithContent("Command on cooldown.")
-                    .AsEphemeral(true);
-
-                await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, responseBuilder);
-                return;
-            }
-
-            await Program.LockCommand(2);
-
-            try
-            {
-
-                Console.WriteLine(input);
+                if(Program.readingAvail)
+                {
+                    await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder().WithContent("Reading for availability. Wait a bit.").AsEphemeral(true));
+                    return;
+                }
 
                 //parse members 
 
@@ -75,7 +67,6 @@ namespace DiscordBot
                     if (match.Groups.Count > 1)
                     {
                         string userId = match.Groups[1].Value;
-                        Console.WriteLine(userId);
                         userIds.Add(userId);
                     }
                 }
@@ -101,10 +92,27 @@ namespace DiscordBot
                 .AddComponents(new TextInputComponent("Start date?", "start_date", "ie. 08/14 MM/DD", null, true, DSharpPlus.TextInputStyle.Short, 1, 5));
                 await ctx.CreateResponseAsync(InteractionResponseType.Modal, mb);
             }
-            finally
+            else
             {
-                Program.UnlockCommand(2);
+                await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder().WithContent("No permission to use this command L.").AsEphemeral(true));
             }
+
+         }
+
+        
+
+        [SlashCommand("help", "send a helpful dm about stuff")]
+        public async Task SendHelp(InteractionContext ctx)
+        {
+            
+            var badResponseBuilder = new DiscordInteractionResponseBuilder()
+                 .WithContent("Sending you a DM...")
+                 .AsEphemeral(true);
+
+            await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, badResponseBuilder);
+            await Program.SendHelpMessage(ctx.Interaction.Guild.Id, ctx.Interaction.User.Id);
+
+            return;
         }
 
         [SlashCommand("showevents", "Show current events.")]
@@ -226,19 +234,18 @@ namespace DiscordBot
         }
 
         [SlashCommand("delete", "Delete an event")]
-        [RequireRoles(RoleCheckMode.Any, "Admin")]
         public async Task DeleteEvent(InteractionContext ctx, [ChoiceProvider(typeof(InviteDudesChoiceProvider))][Option("event_id", "event id in question")] string option)
         {
-            if (Program.isCommandLocked[1])
+            var userRoles = ctx.Member.Roles;
+            // Check if the user has the "admin" role
+            if (userRoles.Any(role => role.Name.ToLower() == "admin"))
             {
-                await ctx.CreateResponseAsync("Sorry, this command is currently in cooldown : ( .");
-                return;
-            }
+                if (Program.readingAvail)
+                {
+                    await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder().WithContent("Reading for availability. Wait a bit.").AsEphemeral(true));
+                    return;
+                }
 
-            await Program.LockCommand(1);
-
-            try
-            {
 
                 //Fix typ
                 KneeEvent cur = null;
@@ -247,11 +254,11 @@ namespace DiscordBot
                     if (option == e.event_id)
                         cur = e;
                 }
-                if (cur.creator_id != ctx.User.Id)
+                /*if (cur.creator_id != ctx.User.Id)
                 {
                     await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder().WithContent($"Not the event creator, dawg"));
                     return;
-                }
+                }*/
 
                 /*foreach (var kvp in cur.userIdMessageId)
                 {
@@ -262,8 +269,6 @@ namespace DiscordBot
                 string filePath = $"{Program.path}events\\";
                 filePath += $"{option}.json";
 
-                Console.WriteLine(filePath);
-
                 try
                 {
                     if (File.Exists(filePath))
@@ -273,12 +278,12 @@ namespace DiscordBot
                         //clear the png too
                         var imageFilePath = $"{Program.path}avail_images\\{option}.json";
 
-                        if(File.Exists(imageFilePath))
+                        if (File.Exists(imageFilePath))
                         {
                             File.Delete(imageFilePath);
-                        } 
+                        }
 
-                        
+
 
                         var responseBuilder = new DiscordInteractionResponseBuilder()
                             .WithContent("Event Deleted Successfully.")
@@ -299,33 +304,26 @@ namespace DiscordBot
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"An error occurred: {ex.Message}");
                     var responseBuilder = new DiscordInteractionResponseBuilder()
                             .WithContent("Something broke : ) .")
                             .AsEphemeral(true);
 
                     await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, responseBuilder);
                 }
-
-
-                Program.Reconnect();
             }
-            finally
+            else
             {
-                Program.UnlockCommand(1);
+                await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, new DiscordInteractionResponseBuilder().WithContent("No permission to use this command L.").AsEphemeral(true));
             }
         }
 
         [SlashCommand("invite", "Posthumous Invite")]
-        [RequireRoles(RoleCheckMode.Any, "Admin")]
         public async Task Invite(InteractionContext ctx, [ChoiceProvider(typeof(InviteDudesChoiceProvider))][Option("event_id", "event id in question")] string option, [Option("Users", "ping the dudes please :)")] string users)
         {
 
             // Read the file associated
             string filePath = $"{Program.path}events\\";
             filePath += $"{option}.json";
-
-            Console.WriteLine(filePath);
 
             try
             {
@@ -349,8 +347,17 @@ namespace DiscordBot
                     {
                         if (match.Groups.Count > 1)
                         {
-
                             string userId = match.Groups[1].Value;
+                            await Program.checkBot(ulong.Parse(userId));
+                            if(Program.userIsBot)
+                            {
+                                var responseBuilder2 = new DiscordInteractionResponseBuilder()
+                                .WithContent($"Why invite a bot, bozo?")
+                                .AsEphemeral(true);
+
+                                await ctx.CreateResponseAsync(InteractionResponseType.ChannelMessageWithSource, responseBuilder2);
+                                return;
+                            }
                             usersToInvite.Add(userId);
                             bool temp_b = false;
                             foreach (var kvp in cur.userIdMessageId)
@@ -380,7 +387,14 @@ namespace DiscordBot
                     string msg = "";
                     foreach (String user in usersToInvite)
                     {
-                        await Program.SendScheduleMessage(ctx.Interaction.Guild.Id, ulong.Parse(user), ctx.Interaction.Channel);
+                        try
+                        {
+                            await Program.SendScheduleMessage(ctx.Interaction.Guild.Id, ulong.Parse(user), ctx.Interaction.Channel);
+                        }
+                        catch(Exception ex)
+                        {
+                            Console.WriteLine("Failed to send to " + ctx.User.Username);
+                        }
                         msg += $"<@{user}>";
                     }
 
@@ -398,7 +412,7 @@ namespace DiscordBot
             }
             catch (Exception ex)
             {
-                Console.WriteLine("BRUH" + ex.ToString());
+                Console.WriteLine(ex.ToString());
             }
         }
 
