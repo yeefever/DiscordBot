@@ -9,15 +9,18 @@ public class Column
 }
 
 public class DataColumn
-{ 
+{
     public String username { get; set; }
-    public String mon { get; set; }
-    public String tue { get; set; }
-    public String wed { get; set; }
-    public String thu { get; set; }
-    public String fri { get; set; }
-    public String sat { get; set; }
-    public String sun { get; set; }
+    public String day1 { get; set; }
+    public String day2 { get; set; }
+    public String day3 { get; set; }
+    public String day4 { get; set; }
+    public String day5 { get; set; }
+    public String day6 { get; set; }
+    public String day7 { get; set; }
+    public String day8 { get; set; }
+    public String day9 { get; set; }
+    public String day0 { get; set; }
 }
 
 public class AvailabilityData
