@@ -149,8 +149,8 @@ namespace DiscordBot
             readAll();
 
            slashCommandsConfig = _client.UseSlashCommands();
-            slashCommandsConfig.RegisterCommands<InteractionModule>(1137843173050302564);
-            slashCommandsConfig.RegisterCommands<InteractionModule>(1016229761195974698);
+           slashCommandsConfig.RegisterCommands<InteractionModule>(1137843173050302564);
+           slashCommandsConfig.RegisterCommands<InteractionModule>(1016229761195974698);
            // slashCommandsConfig.RegisterCommands<InteractionModule>();
 
             //Connect to the Client and get the Bot online
